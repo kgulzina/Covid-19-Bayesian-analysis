@@ -1,0 +1,35 @@
+---
+title: "EDA"
+author: "Gulzina Kuttubekova"
+date: "5/12/2020"
+output: pdf_document
+---
+
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+Read the dataset:
+```{r}
+covid <- read.csv("~/Desktop/spring2020/stat207/Covid-19-Bayesian-analysis/data/Covid19-04-13-20.txt")
+```
+
+
+Start by describing the variability of the number of cases, $n_i$, especially as they relate to the county's population.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
