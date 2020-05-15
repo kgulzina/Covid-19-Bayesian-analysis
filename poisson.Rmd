@@ -1,0 +1,475 @@
+---
+title: "poisson"
+author: "Gulzina Kuttubekova"
+date: "5/13/2020"
+output: pdf_document
+---
+
+
+```{r, include=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(reshape)
+library(LearnBayes)
+library(rmutil)
+```
+
+Read the dataset:
+```{r}
+covid <- read.csv("~/Desktop/spring2020/stat207/bayesian-analysis-of-COVID19-in-CA/data/Covid19-04-13-20.txt")
+
+# scale population by 1000
+covid$Population <- covid$Population/1000
+```
+
+
+Sample from poisson using two-step direct sampling. 
+```{r}
+#' Draw one sample from full conditional lambda distribution for all counties
+#' 
+#' @param alpha one sample of alpha
+#' @param beta one sample of beta
+#' @param C population of 58 counties
+#' @param N number of infected people in 58 counties 
+#' @return 1*58-dim vector with samples of lambda for all counties
+conditional_lambda <- function(alpha, beta, C, N) {
+    s <- c()
+    
+    for (i in 1:58) {
+        alpha_star <- alpha + N[i]
+        beta_star <- 1 / (1/beta + C[i]/1000)
+        
+        s[i] <- rgamma(1, shape = alpha_star, scale = beta_star)
+    }
+    
+    return(s)
+}
+```
+
+```{r}
+#' Evaluate the ratio of two gamma functions using Stirling's formula
+#' 
+#' @param alpha
+#' @param n
+#' @return
+gamma_ratios <- function(alpha, n) {
+    res <- ((n + alpha - 1) / (n - 1))^n
+    res <- res*((n + alpha - 1) / exp(1))^alpha
+    
+    return(res)
+}
+```
+
+
+```{r}
+#' Evaluate p(alpha, beta|n)
+#' 
+#' @param alpha parameter
+#' @param beta parameter
+#' @param C population of 58 counties
+#' @param N number of infected people in 58 counties
+#' @return value of marginal evaluated at alpha, beta 
+marginal_alpha_beta <- function(alpha, beta, C, N) {
+    pv <- c()
+    # scale N by 100
+    N <- N
+    
+    for (i in 1:58) {
+        c = C[i]
+        n = N[i]
+        
+        if (n == 0) {
+            pv[i] = 1 / ( (beta*(c + 1/beta))^alpha )
+        } else if (n ==1) {
+            num = c*gamma(alpha+1)
+            denom = beta^alpha * gamma(alpha) * (c + 1/beta)^(alpha+1)
+            pv[i] = num / denom
+        } else {
+            gamma_ratio = gamma_ratios(alpha, n)
+            powers = (c*beta/(c*beta + 1))^n * (beta/(c*beta + 1))^beta
+        
+            num = gamma_ratio * powers
+            denom = n * beta^(alpha) * gamma(alpha)
+            pv[i] <-  10^25 * num / denom
+        }
+    }
+    
+    res <- dgamma(alpha, 
+                  shape = 10, 
+                  scale = 2) * dgamma(beta, 
+                                      shape = 20,
+                                      scale = 0.5) * prod(pv)
+    
+    return(res)
+}
+```
+
+
+
+
+Sample 500 samples from joint marginal of alpha and beta:
+```{r}
+# Grid to evaluate in dataframe
+dt <- expand.grid(X = seq(0.1, 40, length=500), 
+                  Y = seq(0.1, 30, length=500))
+
+# get probabilities
+for (i in 1:nrow(dt)) {
+    dt$p[i] <- marginal_alpha_beta(dt[i,1], dt[i,2], 
+                                   covid$Population,
+                                   covid$Total.cases)
+}
+
+# sample from marginal 
+n = 50000
+
+# take only the ones with non inf values
+dt <- dt[!is.infinite(rowSums(dt)),]
+
+# normalize probs
+dt$p <- dt$p / sum(dt$p)
+
+# sample from it
+idx <- sample(1:nrow(dt), size = n, replace=TRUE, prob=dt$p)
+sampled_alpha <- dt$X[idx]
+sampled_beta <- dt$Y[idx]
+```
+
+```{r}
+sampled_alpha %>% hist()
+sampled_beta %>% hist()
+```
+Posterior estimates
+```{r}
+quantile(sampled_alpha, probs = c(0.025, 0.5, 0.975))
+quantile(sampled_beta, probs = c(0.025, 0.5, 0.975))
+```
+
+
+Posterior and prior distributions of alpha and betas:
+```{r}
+sa <- data.frame(posterior = sampled_alpha, 
+                 prior = rgamma(n, 10, scale = 2))
+sa_melt <- melt(sa, measure.vars = c('posterior', 'prior'))
+colnames(sa_melt) <- c('type', 'alpha')
+```
+
+```{r}
+pa <- ggdensity(sa_melt, 'alpha', fill = 'type') + 
+    xlim(0, 50)
+```
+
+```{r}
+sb <- data.frame(posterior = sampled_beta, 
+                 prior = rgamma(n, 20, scale = 0.5))
+sb_melt <- melt(sb, measure.vars = c('posterior', 'prior'))
+colnames(sb_melt) <- c('type', 'beta')
+```
+
+```{r}
+pb <- ggdensity(sb_melt, 'beta', fill = 'type') + 
+    ylab("") + 
+    xlim(0, 20)
+```
+
+```{r}
+ggarrange(pa, pb, common.legend = T)
+```
+
+
+Sample lambdas:
+```{r}
+lambdas <- c()
+for (i in 1:n) {
+    temp <- conditional_lambda(sampled_alpha[i],
+                               sampled_beta[i],
+                               covid$Population,
+                               covid$Total.cases)
+    lambdas <- rbind(lambdas, temp)
+}
+```
+
+```{r}
+lambdas %>% dim()
+```
+
+```{r}
+lambdas %>% apply(2, quantile, probs = c(0.025, 0.5, 0.975))
+```
+
+Plot all lambdas as boxplots:
+```{r}
+# rename columns
+colnames(lambdas) <- covid$County
+
+# melt
+lambdas_melt <- melt(lambdas)
+
+# boxplots
+lambdas_melt %>% ggplot(aes(y=value, x=X2)) + 
+    geom_boxplot(outlier.size = 0.5) + 
+    theme(axis.text.x = element_text(angle = 90, size = 6)) + 
+    ggtitle('Distribution of lambda by county') +
+    xlab("") + 
+    ylab("lambda")
+```
+
+Estimate mean infections for two different counties:
+```{r}
+mean(lambdas[1]) * covid$Population[1]
+mean(lambdas[7]) * covid$Population[7]
+```
+
+
+Obtain samples from posterior predictive distribution:
+```{r}
+#' Draw one sample from predictive distribution for all counties
+#' 
+#' @param lambda one sample of lambda
+#' @param C population of 58 counties
+#' @return 1*58-dim vector with samples of n for all counties
+predictive_n<- function(lambda, C) {
+    s <- c()
+    
+    for (i in 1:58) {
+        s[i] <- rpois(1, lambda = lambda[i]*C[i])
+    }
+    
+    return(s)
+}
+```
+
+```{r}
+n <- nrow(lambdas)
+ns <- c()
+for (i in 1:n) {
+    temp <- predictive_n(lambdas[i,], covid$Population)
+    ns <- rbind(ns, temp)
+} 
+```
+
+Use this samples along with thetas from previous study:
+```{r}
+ds <- matrix(NA, nrow = nrow(ns), ncol = ncol(ns))
+
+# estimate E[theta|y]
+mean_thetas <- apply(thetas, 2, mean)
+
+# multiply each mean theta by n_i's
+for (i in 1:58) {
+    ds[,i] <- ns[,i]*mean_thetas[i] / covid$Population[i] 
+}
+```
+
+Boxplot for death per 1000 habitants distirbution
+```{r}
+# rename columns
+colnames(ds) <- covid$County
+
+# melt
+ds_melt <- melt(ds)
+
+# boxplots
+ds_boxplots <- ds_melt %>%  
+    ggplot(aes(y=value, x=X2)) + 
+    geom_boxplot(outlier.size = 0.5) + 
+    theme(axis.text.x = element_text(angle = 90, size = 6)) + 
+    ggtitle('Distribution of number of deaths per 1000 habitants') +
+    xlab("") + 
+    ylab("deaths per 1000")
+```
+
+```{r}
+ds_boxplots
+```
+
+
+Top five counties:
+```{r}
+ds %>% apply(2, mean) %>% sort()
+```
+
+```{r}
+covid$Deaths / covid$Population
+```
+
+
+
+Posterior predictive checks:
+
+```{r}
+# to see if Los Angeles is captured
+maxs <- ns %>% apply(1, max)
+sum(maxs == ns[,1])
+```
+
+```{r}
+# percentage captured by LA only
+la_real <- covid$Total.cases[1] / sum(covid$Total.cases)
+
+# sampled
+la_share <- c()
+for (i in 1:nrow(ns)) {
+    la_share[i] <- ns[i,1] / sum(ns[i,])
+}
+```
+
+```{r}
+hist(la_share, main = 'aksd')
+abline(v = la_real, col="red")
+```
+
+```{r}
+# percentage captured by Orange only
+orange_real <- covid$Total.cases[5] / sum(covid$Total.cases)
+
+# sampled
+orange_share <- c()
+for (i in 1:nrow(ns)) {
+    orange_share[i] <- ns[i,5] / sum(ns[i,])
+}
+```
+
+```{r}
+hist(orange_share)
+abline(v = orange_real, col='red')
+```
+
+```{r}
+# percentage captured by Orange only
+sf_real <- covid$Total.cases[7] / sum(covid$Total.cases)
+
+# sampled
+sf_share <- c()
+for (i in 1:nrow(ns)) {
+    sf_share[i] <- ns[i,7] / sum(ns[i,])
+}
+```
+
+```{r}
+hist(sf_share)
+abline(v = sf_real, col='red')
+```
+
+```{r}
+par(mfrow = c(3,4))
+n <- nrow(ns)
+
+for (j in 1:12) {
+    # percentage captured by Orange only
+    real <- covid$Total.cases[j] / sum(covid$Total.cases)
+
+    # sampled
+    share <- c()
+    for (i in 1:n) {
+        share[i] <- ns[i,j] / sum(ns[i,])
+    }
+    
+    # plot
+    share %>% hist(ylab = "", main = covid$County[j])
+    abline(v=real, col="red")
+}
+```
+
+```{r}
+par(mfrow = c(3,4))
+n <- nrow(ns)
+
+for (j in 13:24) {
+    # percentage captured by Orange only
+    real <- covid$Total.cases[j] / sum(covid$Total.cases)
+
+    # sampled
+    share <- c()
+    for (i in 1:n) {
+        share[i] <- ns[i,j] / sum(ns[i,])
+    }
+    
+    # plot
+    share %>% hist(ylab = "", main = covid$County[j])
+    abline(v=real, col="red")
+}
+```
+
+```{r}
+par(mfrow = c(3,4))
+n <- nrow(ns)
+
+for (j in 25:36) {
+    # percentage captured by Orange only
+    real <- covid$Total.cases[j] / sum(covid$Total.cases)
+
+    # sampled
+    share <- c()
+    for (i in 1:n) {
+        share[i] <- ns[i,j] / sum(ns[i,])
+    }
+    
+    # plot
+    share %>% hist(ylab = "", main = covid$County[j])
+    abline(v=real, col="red")
+}
+```
+
+```{r}
+par(mfrow = c(3,4))
+n <- nrow(ns)
+
+for (j in 37:48) {
+    # percentage captured by Orange only
+    real <- covid$Total.cases[j] / sum(covid$Total.cases)
+
+    # sampled
+    share <- c()
+    for (i in 1:n) {
+        share[i] <- ns[i,j] / sum(ns[i,])
+    }
+    
+    # plot
+    share %>% hist(ylab = "", main = covid$County[j])
+    abline(v=real, col="red")
+}
+```
+
+```{r}
+par(mfrow = c(3,4))
+n <- nrow(ns)
+
+for (j in 49:58) {
+    # percentage captured by Orange only
+    real <- covid$Total.cases[j] / sum(covid$Total.cases)
+
+    # sampled
+    share <- c()
+    for (i in 1:n) {
+        share[i] <- ns[i,j] / sum(ns[i,])
+    }
+    
+    # plot
+    share %>% hist(ylab = "", main = covid$County[j])
+    abline(v=real, col="red")
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
