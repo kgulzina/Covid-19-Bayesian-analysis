@@ -1,0 +1,179 @@
+---
+title: "poisson_modified"
+author: "Gulzina Kuttubekova"
+date: "5/13/2020"
+output: pdf_document
+---
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(reshape)
+library(LearnBayes)
+library(rmutil)
+```
+
+Read the dataset:
+```{r}
+covid <- read.csv("~/Desktop/spring2020/stat207/bayesian-analysis-of-COVID19-in-CA/data/Covid19-04-13-20.txt")
+
+covid$Population <- covid$Population/1000
+```
+
+
+Use Gibbs sampling to sample from joint posterior distribution of theta, and lambda.  
+
+```{r}
+# use the same samples you got from the previous study
+rej_ss %>% apply(2, mean)
+```
+
+```{r}
+# for ith county
+log_lik <- function(lambda, mu, tau, theta, c, n, y) {
+    res <- theta^(mu*tau + n + y - 1)
+    res <- res*(1-theta)^((1-mu)*tau - 1 + n - y) * exp(-theta*lambda*c)
+
+    return(res)
+}
+```
+
+
+```{r}
+full_theta_mh <- function(lambda, mu, tau, theta, C, N, y) {
+    thetas <- c()
+    var_tuning = 0.01
+    
+    for (i in 1:58) {
+        prop <- rnorm(1, log(theta[i]), sqrt(var_tuning))
+        acceptance_prob <- min(
+            exp(log_lik(lambda, mu, tau, exp(prop), C[i], N[i], y[i])-log_lik(lambda, mu, tau, theta[i], C[i], N[i], y[i])), 1)
+        u <- runif(1)
+        
+        if (!is.nan(acceptance_prob) & (u < acceptance_prob)) {
+            thetas[i] <- exp(prop)
+        } else {
+            thetas[i] <- theta[i]
+        }
+    }
+    
+    return(thetas)
+}
+```
+
+
+```{r}
+# Write Gibbs sampling 
+gibbs <- function(a, b, lambda_init, thetas_init, mu, tau, C, N, y) {
+    # constants
+    niter = length(mu)
+    sum_n = sum(N)
+    lambda_temp = lambda_init
+    thetas_temp = thetas_init
+    
+    # results
+    thetas = c()
+    lambda <- c()
+    
+    for (i in 1:niter) {
+        # sample thetas using MH
+        thetas_temp = full_theta_mh(lambda_temp, mu[i], tau[i], 
+                                    thetas_temp, C, N, y)
+        thetas = rbind(thetas, thetas_temp)
+        
+        # sample lambda
+        lambda_temp = rgamma(1, shape = n + a, 
+                            scale = 1/(1/b + sum(thetas_temp*C)))
+        lambda[i] <- lambda_temp
+    }
+    
+    return(list(thetas, lambda))
+}
+```
+
+
+```{r}
+theta_init <- rep(0.05, 58)
+lambda_init <- 20
+
+samples <- gibbs(20, 10, lambda_init, theta_init, 
+                 rej_ss$mu, rej_ss$tau, 
+                 covid$Population, covid$Total.cases, 
+                 covid$Deaths)
+```
+
+```{r}
+theta <- theta_init
+lambda <- lambda_init
+mu <- rej_ss$mu
+tau <- rej_ss$tau
+N <- covid$Total.cases
+C <- covid$Population
+y <- covid$Deaths
+```
+
+```{r}
+thetas2 <- samples[[1]]
+lambdas2 <- samples[[2]]
+```
+
+```{r}
+thetas2 %>% apply(2, mean)
+```
+
+```{r}
+lambdas2 %>% mean()
+lambdas2 %>% quantile(probs = c(0.025, 0.5, 0.975))
+```
+
+```{r}
+# posterior and prior lambda
+sl <- data.frame(posterior = lambdas2, 
+                 prior = rgamma(length(lambdas2), 20, scale = 10))
+sl_melt <- melt(sl, measure.vars = c('posterior', 'prior'))
+colnames(sl_melt) <- c('type', 'lambda')
+```
+
+```{r}
+ggdensity(sl_melt, 'lambda', fill = 'type') + 
+    ylab("") +
+    xlim(0, 2000)
+```
+
+
+
+Compare the mortality rate for each county:
+```{r}
+# rename columns
+colnames(thetas2) <- covid$County
+
+# melt
+thetas2_melt <- melt(thetas2)
+
+# boxplots
+thetas2_melt %>% ggplot(aes(y=value, x=X2)) + 
+    geom_boxplot(outlier.size = 0.5) + 
+    theme(axis.text.x = element_text(angle = 90, size = 6)) + 
+    ggtitle('Distribution of lambda by county') +
+    xlab("") + 
+    ylab("lambda")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
