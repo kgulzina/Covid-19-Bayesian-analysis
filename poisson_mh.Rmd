@@ -1,0 +1,93 @@
+---
+title: "poisson_mh"
+author: "Gulzina Kuttubekova"
+date: "5/14/2020"
+output: pdf_document
+---
+
+
+```{r, include=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(reshape)
+library(LearnBayes)
+library(rmutil)
+```
+
+Read the dataset:
+```{r}
+covid <- read.csv("~/Desktop/spring2020/stat207/bayesian-analysis-of-COVID19-in-CA/data/Covid19-04-13-20.txt")
+
+# scale population by 1000
+covid$Population <- covid$Population/1000
+```
+
+
+```{r}
+#' Draw one sample from full conditional lambda distribution for all counties
+#' 
+#' @param alpha one sample of alpha
+#' @param beta one sample of beta
+#' @param C population of 58 counties
+#' @param N number of infected people in 58 counties 
+#' @return 1*58-dim vector with samples of lambda for all counties
+conditional_lambda <- function(alpha, beta, C, N) {
+    s <- c()
+    
+    for (i in 1:58) {
+        alpha_star <- alpha + N[i]
+        beta_star <- (beta + C[i]/1000)
+        
+        s[i] <- rgamma(1, shape = alpha_star, rate = beta_star)
+    }
+    
+    return(s)
+}
+```
+
+```{r}
+# draw beta
+conditional_beta <- function(alpha, lambda, C, N) {
+    n = length(C)
+    s <- rgamma(1, shape = n+20, rate = sum(lambda) + 2)
+    
+    return(s)
+}
+```
+
+```{r}
+gibbs_poisson <- function(alpha_init, beta_init, maxit, C, N) {
+    # constans
+    lambdas <- c()
+    alpha <- c()
+    beta <- c()
+    
+    # temps
+    alpha_temp <- alpha_init
+    beta_temp <- beta_init
+    
+    for (i in 1:maxit) {
+        # sample thetas
+        lambdas_temp <- conditional_lambda(alpha_temp, beta_temp, C, N)
+        lambdas <- rbind(lambdas_temp)
+        
+        # sample beta
+        beta_temp <- conditional_beta(alpha_temp, lambdas_temp, C, N)
+    }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
