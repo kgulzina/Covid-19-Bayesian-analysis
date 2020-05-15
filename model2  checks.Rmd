@@ -1,0 +1,9 @@
+---
+title: "model2 checks"
+author: "Gulzina Kuttubekova"
+date: "5/14/2020"
+output: pdf_document
+---
+
+
+

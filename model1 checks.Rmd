@@ -1,0 +1,7 @@
+---
+title: "model1 checking"
+author: "Gulzina Kuttubekova"
+date: "5/14/2020"
+output: pdf_document
+---
+
