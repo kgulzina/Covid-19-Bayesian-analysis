@@ -160,6 +160,196 @@ thetas2_melt %>% ggplot(aes(y=value, x=X2)) +
     ylab("lambda")
 ```
 
+```{r}
+covid$post_death_rate <- apply(thetas, 2, mean)
+```
+
+```{r}
+# ggplot using three variables
+covid %>% filter(post_death_rate != 0) %>% 
+    ggplot(aes(x=County, y=post_death_rate)) + 
+    geom_bar(stat = "identity") + coord_flip() +
+    theme(axis.text.y = element_text(size = 6)) + 
+    ggtitle('Posterior distribution of death rate by county') +
+    ylim(0.0, 0.1)
+```
+
+```{r}
+mean(covid$post_death_rate) * sum(covid$Total.cases)
+```
+
+
+Now generate posterior predictive ns:
+```{r}
+#' Draw one sample from predictive distribution of n for all counties
+#' 
+#' @param lambda one sample of lambda
+#' @param theta one sample of theta's
+#' @param C population of 58 counties
+#' @return 1*58-dim vector with samples of n for all counties
+predictive_n<- function(lambda, C, theta) {
+    s <- c()
+    
+    for (i in 1:58) {
+        s[i] <- rpois(1, lambda = lambda*theta[i]*C[i])
+    }
+    
+    return(s)
+}
+```
+
+```{r}
+# sample n's
+n <- length(lambdas2)
+ns2 <- c()
+for (i in 1:n) {
+    temp <- predictive_n(lambdas2[i], covid$Population, thetas2[i,])
+    ns2 <- rbind(ns2, temp)
+} 
+```
+
+```{r}
+#' Draw one sample from predictive distribution of y for all counties
+#' 
+#' @param n one sample of n
+#' @param theta one sample of theta's
+#' @return 1*58-dim vector with samples of n for all counties
+predictive_y<- function(n, theta) {
+    s <- c()
+    
+    for (i in 1:58) {
+        s[i] <- rbinom(1, size = n[i], prob = theta[i])
+    }
+    
+    return(s)
+}
+```
+
+```{r}
+# sample y's
+ys <- c()
+for (i in 1:n) {
+    temp <- predictive_y(ns2[i,], thetas2[i,])
+    ys <- rbind(ys, temp)
+}
+```
+
+```{r}
+dss <- matrix(NA, nrow = nrow(ys), ncol = ncol(ys))
+
+# multiply each mean theta by n_i's
+for (i in 1:58) {
+    dss[,i] <- ys[,i] / covid$Population[i] 
+}
+```
+
+
+```{r}
+# rename columns
+colnames(dss) <- covid$County
+
+# melt
+dss_melt <- melt(dss)
+
+# boxplots
+dss_boxplots <- dss_melt %>%  
+    ggplot(aes(y=value, x=X2)) + 
+    geom_boxplot(outlier.size = 0) + 
+    theme(axis.text.x = element_text(angle = 90, size = 6)) + 
+    ggtitle('Distribution of number of deaths per 1000 habitants') +
+    xlab("") + 
+    ylab("deaths per 1000")
+```
+
+```{r}
+dss_boxplots
+```
+
+Top five counties:
+```{r}
+dss %>% apply(2, mean) %>% sort()
+```
+
+
+Calculate share posterior probs:
+```{r}
+n <- nrow(ns2)
+probs_left <- c()
+probs_right <- c()
+count <- 1
+
+for (j in c(1, 2, 5, 7, 10, 15, 18, 24, 26)) {
+    # percentage captured by Orange only
+    real <- covid$Total.cases[j] / sum(covid$Total.cases)
+
+    # sampled
+    share <- c()
+    for (i in 1:n) {
+        share[i] <- ns2[i,j] / sum(ns2[i,])
+    }
+    
+    probs_left[count] <- sum(real < share) / n
+    probs_right[count] <- sum(real > share) / n
+    
+    count <- count + 1
+    # plot
+    #share %>% hist(ylab = "", xlab = 'T(n)',main = covid$County[j])
+    #abline(v=real, col="red")
+}
+```
+
+```{r}
+cbind(probs_left, probs_right)
+```
+
+Predictive n comparison
+```{r}
+nss <- matrix(NA, nrow = nrow(ns2), ncol = ncol(ns2))
+
+# multiply each mean theta by n_i's
+for (i in 1:58) {
+    nss[,i] <- ns2[,i] / covid$Population[i] 
+}
+```
+
+```{r}
+covid$nss_means <- apply(nss, 2, mean)
+```
+
+```{r}
+covid %>% filter(nss_means != 0) %>% 
+    ggplot(aes(x=County, y=nss_means)) + 
+    geom_bar(stat = "identity") + coord_flip() +
+    ylab("infection per 1000") +
+    theme(axis.text.y = element_text(size = 6)) + 
+    ggtitle('Posterior predictive distribution of infection by county')
+    
+```
+
+
+```{r}
+# rename columns
+colnames(nss) <- covid$County
+
+# melt
+nss_melt <- melt(nss)
+
+# boxplots
+nss_boxplots <- nss_melt %>%  
+    ggplot(aes(y=value, x=X2)) + 
+    geom_boxplot(outlier.size = 0) + 
+    theme(axis.text.x = element_text(angle = 90, size = 6)) + 
+    ggtitle('Distribution of number of deaths per 1000 habitants') +
+    xlab("") + 
+    ylab("deaths per 1000")
+```
+
+```{r}
+nss_boxplots
+```
+
+
+
 
 
 
