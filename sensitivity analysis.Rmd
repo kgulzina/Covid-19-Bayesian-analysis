@@ -1,0 +1,79 @@
+---
+title: "sensitivity analysis"
+author: "Gulzina Kuttubekova"
+date: "5/15/2020"
+output: pdf_document
+---
+
+
+```{r}
+covid <- read.csv("~/Desktop/spring2020/stat207/bayesian-analysis-of-COVID19-in-CA/data/Covid19-04-13-20.txt")
+
+covid$Population <- covid$Population/1000
+```
+
+```{r}
+theta_init <- rep(0.05, 58)
+lambda_init <- 20
+
+samples2 <- gibbs(0.5, 0.5, lambda_init, theta_init, 
+                 rej_ss$mu, rej_ss$tau, 
+                 covid$Population, covid$Total.cases, 
+                 covid$Deaths)
+```
+
+
+```{r}
+thetas3 <- samples2[[1]]
+lambdas3 <- samples2[[2]]
+```
+
+```{r}
+# sample n's
+n <- length(lambdas3)
+ns3 <- c()
+for (i in 1:n) {
+    temp <- predictive_n(lambdas3[i], covid$Population, thetas3[i,])
+    ns3 <- rbind(ns3, temp)
+} 
+```
+
+Calculate share posterior probs:
+```{r}
+n <- nrow(ns3)
+probs_left <- c()
+probs_right <- c()
+count <- 1
+
+for (j in c(1, 2, 5, 7, 10, 15, 18, 24, 26)) {
+    # percentage captured by Orange only
+    real <- covid$Total.cases[j] / sum(covid$Total.cases)
+
+    # sampled
+    share <- c()
+    for (i in 1:n) {
+        share[i] <- ns3[i,j] / sum(ns3[i,])
+    }
+    
+    probs_left[count] <- sum(real < share) / n
+    probs_right[count] <- sum(real > share) / n
+    
+    count <- count + 1
+    # plot
+    #share %>% hist(ylab = "", xlab = 'T(n)',main = covid$County[j])
+    #abline(v=real, col="red")
+}
+```
+
+```{r}
+cbind(probs_left, probs_right)
+```
+
+
+
+
+
+
+
+
+
