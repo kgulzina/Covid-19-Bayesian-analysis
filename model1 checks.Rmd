@@ -5,3 +5,119 @@ date: "5/14/2020"
 output: pdf_document
 ---
 
+Gelfand and Ghosh
+
+```{r}
+# calculate G
+ns_means <- apply(ns, 2, mean)
+G1 <- sum((ns_means - covid$Total.cases)^2)
+
+# calculate P
+ns_vars <- apply(ns, 2, var)
+P1 <- sum(ns_vars)
+
+# GG
+D1 <- G1 + P1
+```
+
+```{r}
+# calculate G
+ns2_means <- apply(ns2, 2, mean)
+G2 <- sum((ns2_means - covid$Total.cases)^2)
+
+# calculate P
+ns2_vars <- apply(ns2, 2, var)
+P2 <- sum(ns2_vars)
+
+# GG
+D2 <- G2 + P2
+```
+
+```{r}
+c(D1, D2)
+```
+
+
+Calculate DIC's
+```{r}
+p_dic1 <- function(lambda, n, c) {
+    res <- c()
+    n = nrow(lambda)
+    
+    for (i in 1:n) {
+        temp = dpois(n, lambda = lambda[i,]*c)
+        temp = temp[temp != 0]
+        res[i] = sum(log(temp))
+    }
+    
+    return(mean(res))
+}
+```
+
+```{r}
+# bayes estimates of lambda's
+lambda_means <- apply(lambdas, 2, mean)
+
+# loglkl
+loglkl1 <- log(5.282069e-151)
+
+# p1_dic
+p1_dic <- 2*(loglkl1 - p_dic1(lambdas, covid$Total.cases, covid$Population))
+
+# DIC
+DIC1 <- -2*loglkl1 + 2*p1_dic
+```
+
+
+
+
+DIC2:
+```{r}
+p_dic2 <- function(lambda, theta, n, c) {
+    res <- c()
+    n = nrow(theta)
+    
+    for (i in 1:n) {
+        temp = dpois(n, lambda = lambda[i]*theta[i,]*c)
+        temp = temp[temp != 0]
+        res[i] = sum(log(temp))
+    }
+    
+    return(mean(res))
+}
+```
+
+```{r}
+# bayes estimates of lambda's
+lambda_mean2 <- mean(lambdas2)
+
+# bayes estimates of theta's
+theta_means <- apply(thetas2, 2, mean)
+
+# loglkl
+temp2 = dpois(covid$Total.cases, 
+              lambda = lambda_mean2*theta_means*covid$Population)
+temp2 = temp2[temp2 != 0]
+loglkl2 <- sum(log(temp2))
+
+# p_dic
+p2_dic <- 2*(loglkl2 - p_dic2(lambdas2, thetas2,
+                              covid$Total.cases, covid$Population))
+
+# DIC
+DIC2 <- -2*loglkl2 + 2*p2_dic
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
