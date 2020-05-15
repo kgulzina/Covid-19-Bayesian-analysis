@@ -452,7 +452,37 @@ for (j in 49:58) {
 }
 ```
 
+```{r}
+#par(mfrow = c(3,3))
+n <- nrow(ns)
+probs_left <- c()
+probs_right <- c()
+count <- 1
 
+for (j in c(1, 2, 5, 7, 10, 15, 18, 24, 26)) {
+    # percentage captured by Orange only
+    real <- covid$Total.cases[j] / sum(covid$Total.cases)
+
+    # sampled
+    share <- c()
+    for (i in 1:n) {
+        share[i] <- ns[i,j] / sum(ns[i,])
+    }
+    
+    probs_left[count] <- sum(real < share) / n
+    probs_right[count] <- sum(real > share) / n
+    
+    count <- count + 1
+    # plot
+    #share %>% hist(ylab = "", xlab = 'T(n)',main = covid$County[j])
+    #abline(v=real, col="red")
+}
+```
+
+```{r}
+probs_left
+probs_right
+```
 
 
 
